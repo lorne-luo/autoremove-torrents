@@ -9,6 +9,7 @@ from .task import Task
 from autoremovetorrents.version import __version__
 from autoremovetorrents.compatibility.open_ import open_
 
+
 def pre_processor(argv):
     # View Mode
     view_mode = False
@@ -29,8 +30,8 @@ def pre_processor(argv):
     except getopt.GetoptError:
         print('Invalid arguments.')
         sys.exit(255)
-    for opt,arg in opts:
-        if opt in ('-v', '--view'): # View mode (without deleting)
+    for opt, arg in opts:
+        if opt in ('-v', '--view'):  # View mode (without deleting)
             view_mode = True
         elif opt in ('-c', '--conf'):
             conf_path = arg
@@ -42,7 +43,7 @@ def pre_processor(argv):
             debug_mode = True
 
     # Init logger
-    logger.Logger.init(log_path, file_debug_log = debug_mode, output_debug_log = debug_mode)
+    logger.Logger.init(log_path, file_debug_log=debug_mode, output_debug_log=debug_mode)
     lg = logger.Logger.register(__name__)
 
     # Run autoremove
@@ -56,23 +57,25 @@ def pre_processor(argv):
         lg.info('Found %d task(s) in the file.' % len(result))
 
         # Run tasks
-        if task == None: # Task name specified
+        if task == None:  # Task name specified
             for task_name in result:
                 try:
-                    Task(task_name, result[task_name], not view_mode).execute()
+                    Task(task_name, result[task_name], not view_mode, view_mode).execute()
                 except Exception:
                     lg.error(traceback.format_exc().splitlines()[-1])
                     lg.error('Task %s fails. ' % task_name)
                     lg.debug('Exception Logged', exc_info=True)
         else:
-            Task(task, result[task], not view_mode).execute()
+            Task(task, result[task], not view_mode, view_mode).execute()
     except Exception:
         lg.error(traceback.format_exc().splitlines()[-1])
         lg.debug('Exception Logged', exc_info=True)
         lg.critical('An error occured. If you think this is a bug or need help, you can submit an issue.')
 
+
 def main():
     pre_processor(sys.argv[1:])
+
 
 if __name__ == '__main__':
     main()

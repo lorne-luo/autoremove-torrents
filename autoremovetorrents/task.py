@@ -11,8 +11,9 @@ from .exception.nosuchclient import NoSuchClient
 from .strategy import Strategy
 from autoremovetorrents.torrent import Torrent
 
+
 class Task(object):
-    def __init__(self, name, conf, remove_torrents = True):
+    def __init__(self, name, conf, remove_torrents=True, view_mode=False):
         # Logger
         self._logger = logger.Logger.register(__name__)
 
@@ -35,6 +36,7 @@ class Task(object):
         self._username = conf['username'] if 'username' in conf else ''
         self._password = conf['password'] if 'password' in conf else ''
         self._enabled_remove = remove_torrents
+        self._view_mode = view_mode
         self._delete_data = conf['delete_data'] if 'delete_data' in conf else False
         self._strategies = conf['strategies'] if 'strategies' in conf else []
 
@@ -71,10 +73,10 @@ class Task(object):
             u'qbittorrent': qBittorrent,
             u'transmission': Transmission,
             u'μtorrent': uTorrent,
-            u'utorrent': uTorrent, # Alias for μTorrent
+            u'utorrent': uTorrent,  # Alias for μTorrent
             u'deluge': Deluge,
         }
-        self._client_name = self._client_name.lower() # Set the client name to be case insensitive
+        self._client_name = self._client_name.lower()  # Set the client name to be case insensitive
         if self._client_name not in clients:
             raise NoSuchClient("The client `%s` doesn't exist." % self._client_name)
 
@@ -101,7 +103,7 @@ class Task(object):
             # For a long waiting
             if time.time() - last_time > 1:
                 self._logger.info('Please wait...We have found %d torrent(s).' %
-                    len(self._torrents))
+                                  len(self._torrents))
                 last_time = time.time()
         self._logger.info('Found %d torrent(s) in the client.' % len(self._torrents))
 
@@ -118,20 +120,21 @@ class Task(object):
         delete_list = {}
         for torrent in self._remove:
             delete_list[torrent.hash] = torrent.name
+
         # Run deletion
         success, failed = self._client.remove_torrents([hash_ for hash_ in delete_list], self._delete_data)
         # Output logs
         for hash_ in success:
             self._logger.info(
                 'The torrent %s and its data have been removed.' if self._delete_data \
-                else 'The torrent %s has been removed.',
+                    else 'The torrent %s has been removed.',
                 delete_list[hash_]
             )
         for torrent in failed:
             self._logger.error('The torrent %s and its data cannot be removed. Reason: %s' if self._delete_data \
-                else 'The torrent %s cannot be removed. Reason: %s',
-                delete_list[torrent['hash']], torrent['reason']
-            )
+                                   else 'The torrent %s cannot be removed. Reason: %s',
+                               delete_list[torrent['hash']], torrent['reason']
+                               )
 
     # Execute
     def execute(self):
@@ -139,8 +142,15 @@ class Task(object):
         self._login()
         self._get_torrents()
         self._apply_strategies()
+
         if self._enabled_remove:
             self._remove_torrents()
+
+        if self._view_mode:
+            for torrent in self._torrents:
+                self._logger.info('')
+                self._logger.info(torrent)
+
 
     # Get remaining torrents (for tester)
     def get_remaining_torrents(self):
