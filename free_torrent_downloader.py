@@ -88,13 +88,14 @@ pattern = r'id=(\d+)'
 
 config_dict = {
     'site_name': 'cyanbug',
-    'domain': 'cyanbug',
+    'domain': 'https://cyanbug.net',
     'site_url': "https://cyanbug.net/torrents.php",
+    'site_cookie': "c_lang; c_secure_uid=MTMxNjU%3D; c_secure_pass=ad6604e4c304946780791c0c56bee6d2; c_secure_ssl=eWVhaA%3D%3D; c_secure_tracker_ssl=eWVhaA%3D%3D; c_secure_login=bm9wZQ%3D%3D",
     'is_gazelle': False,
     'is_encrypted': False,
-    'torrents_amount': 10,
+    'torrents_amount': 5,
     'torrent_path': r'/Users/lorneluo/Downloads/',
-    'headers': {
+    'http_headers': {
 
     }
 }
@@ -104,17 +105,18 @@ class HttpRequest:
     user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
 
     def __init__(self, config):
-        self.headers = self.get_headers(config['headers'])
         self.site_name = config["site_name"]
         self.domain = config["domain"]
         self.site_url = config["site_url"]
+        self.site_cookie = config["site_cookie"]
         self.session = self.get_session()
+        self.http_headers = self.get_headers(config['http_headers'])
 
     def request(self, url):
-        if self.headers.get('User-Agent') or \
-                self.headers.get('Referer') or \
-                self.headers.get('Host'):
-            res = s.get(url, headers=self.headers)
+        if self.http_headers.get('User-Agent') or \
+                self.http_headers.get('Referer') or \
+                self.http_headers.get('Host'):
+            res = s.get(url, headers=self.http_headers)
         else:
             res = s.get(url)
         return res
@@ -134,7 +136,7 @@ class HttpRequest:
 
     def get_session(self):
         s = requests.Session()
-        s.cookies.update({"cookie": site_cookie})
+        s.cookies.update({"cookie": self.site_cookie})
         return s
 
 
@@ -256,19 +258,21 @@ class NexusPage():
         else:
             return self._torrents_class_name
 
-    def __init__(self, site_name, domian, site_url, is_encrypted, torrents_amount, torrent_path):
+    def __init__(self, config):
         self.torrents_list = []
         self.processed_list = []
-        self.site_name = site_name
-        self.domian = domian
-        self.site_url = site_url
-        self.is_encrypted = is_encrypted
-        self.torrents_amount = torrents_amount
-        self.torrent_path = torrent_path
+        self.site_name = config['site_name']
+        self.domain = config['domain']
+        self.site_url = config['site_url']
+        self.site_cookie = config['site_cookie']
+        self.is_encrypted = config['is_encrypted']
+        self.torrents_amount = config['torrents_amount']
+        self.torrent_path = config['torrent_path']
+        self.http_headers = config['http_headers']
 
         # Requesting page information of torrents by session
-
-        res = requests_check_headers(site_url)
+        self.http_client = HttpRequest(config)
+        res = self.http_client.request(site_url)
         soup = bs4.BeautifulSoup(res.text, 'lxml')
         self.processed_list = soup.select(self.torrents_class_name)
         self.get_all(res.text)
@@ -314,10 +318,10 @@ class NexusPage():
             torrent_id = re.search(pattern, detail_url).group(1)
             size = self.get_size(str(entry))
             if size:
-                self.free_torrents[torrent_id] = (torrent_id, size, download_url)
+                self.free_torrents[torrent_id] = (torrent_id, size, detail_url, download_url)
 
         # pprint(len(self.torrents))
-        pprint(self.free_torrents)
+        # pprint(self.free_torrents)
         return self.free_torrents
 
     def __str__(self):
@@ -333,13 +337,7 @@ class NexusPage():
             return None
 
     def get_download_url(self, torrent_id):
-        return f'{self.domian}/download.php?id={torrent_id}'
-
-    def download(self, url, path):
-        res = requests_check_headers(url)
-        with open(path, 'wb') as f:
-            f.write(res.content)
-        print(f'download {url} to {path}')
+        return f'{self.domain}/download.php?id={torrent_id}'
 
     def download_free(self):
         if os.path.isfile(self.torrent_path + "downloaded_list.log") == False:
@@ -347,11 +345,12 @@ class NexusPage():
                 f.write("A list shows the torrents have been downloaded:\n")
 
         count = 0
-        for torrent_id, (_id, size, download_url) in self.free_torrents.items():
+        for torrent_id, (_id, size, detail_url, download_url) in self.free_torrents.items():
             if count >= self.torrents_amount:
                 break
 
-            full_download_url = urljoin(self.domian, download_url)
+            full_download_url = urljoin(self.domain, download_url)
+            full_detail_url = urljoin(self.domain, detail_url)
             torrent_name = f'{self.site_name}_{torrent_id}_{size}GB.torrent'
 
             log_path = os.path.join(self.torrent_path, "torrents.log")
@@ -367,12 +366,36 @@ class NexusPage():
 
             torrent_path = os.path.join(self.torrent_path, torrent_name)
             if not os.path.isfile(torrent_path):
-                self.download(full_download_url, torrent_path)
+                if self.is_encrypted:
+                    self.encrypted_download(full_detail_url, torrent_path)
+                else:
+                    self.download(full_download_url, torrent_path)
                 print(f'Save {torrent_path}')
             else:
                 print(f'Skip {torrent_path}')
 
             count += 1
+
+    def download(self, url, path):
+        res = self.http_client.request(url)
+        with open(path, 'wb') as f:
+            f.write(res.content)
+        print(f'download {url} to {path}')
+
+    def encrypted_download(self, full_detail_url, path):
+        '''
+        A function to download a free torrent.
+        '''
+        response = self.http_client.request(full_detail_url)
+        soup = bs4.BeautifulSoup(response.text, 'lxml')
+        down_url_last = soup.select_one(self._HDC_torrents_class_name)[
+            'href']  # Just for HDC, common way, but different from other sites either
+        down_url = urljoin(domain, down_url_last)
+        # down_url = soup.select_one('#clip_target')['href']    # a faster way For HDC only
+        res = self.http_client.request(down_url)
+        with open(path, 'wb') as f:
+            f.write(res.content)
+        print(f'download {down_url} to {path}')
 
     def find_free(self):
         free_list = []
@@ -572,7 +595,7 @@ def download_test(torrents_amount, task_list, monitor_path):
 
 if __name__ == '__main__':
     if not is_gazelle:
-        page = NexusPage(site_name, domain, site_url, is_encrypted, torrents_amount, torrent_path)
+        page = NexusPage(config_dict)
         # task_list = task.find_free()
         free_torrents = page.get_free()
         page.download_free()
