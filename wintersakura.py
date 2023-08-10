@@ -1,23 +1,26 @@
 #!/usr/bin/python3
 import sys
+from datetime import datetime, timezone, timedelta
 from pprint import pprint
 from urllib.parse import urljoin
 import bs4
 import requests
 import os
 import re
+import feedparser
+from dateutil.parser import parse
 
 config_dict = {
     'site_name': 'wintersakura',
     'domain': 'https://wintersakura.net',
     'site_url': "https://wintersakura.net/torrents.php?sort=4&type=desc",
+    'rss_url': "https://wintersakura.net/torrentrss.php?passkey=693fcaab7778be73dbd0b593711fb191&rows=10&isize=1&linktype=dl",
     # c_lang;
     'site_cookie': "c_lang; c_secure_uid=MTYzOTg%3D; c_secure_pass=e4e57957b26463802cdb5d4a5e949b1b; c_secure_ssl=eWVhaA%3D%3D; c_secure_tracker_ssl=eWVhaA%3D%3D; c_secure_login=bm9wZQ%3D%3D",
     'is_gazelle': False,
     'is_encrypted': False,
     'min_size': 5,
     'max_size': sys.maxsize,
-    'torrents_amount': 5,
     'torrent_path': os.path.join(os.path.dirname(__file__), 'torrents'),
     'http_headers': {
         "User-Agent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
@@ -85,6 +88,7 @@ class NexusPage():
     free_tag2 = 'pro_free2up'
     pattern = r'id=(\d+)'
     colspan = '3'
+    interval = 120  # second
 
     @property
     def torrents_class_name(self):
@@ -96,6 +100,7 @@ class NexusPage():
     def __init__(self, config):
         self.torrents_list = []
         self.torrents = []
+        self.rss_url = config['rss_url']
         self.site_name = config['site_name']
         self.min_size = config['min_size']
         self.max_size = config['max_size']
@@ -103,20 +108,68 @@ class NexusPage():
         self.site_url = config['site_url']
         self.site_cookie = config['site_cookie']
         self.is_encrypted = config['is_encrypted']
-        self.torrents_amount = config['torrents_amount']
         self.torrent_path = config['torrent_path']
         self.http_headers = config['http_headers']
 
         # Requesting page information of torrents by session
         self.http_client = HttpRequest(config)
-        res = self.http_client.request(self.site_url)
-        soup = bs4.BeautifulSoup(res.text, 'lxml')
-        # print(res.text)
-        self.get_all(res.text)
+        self.log_path = os.path.join(self.torrent_path, "torrents.log")
 
-    def get_all(self, html):
+    def run(self):
+        self.rss_ids = self.get_rss()
+        print(len(self.rss_ids))
+
+        self.get_all()
+        page.get_free()
+        page.download_free()
+
+    def get_rss(self):
+        self.rss_ids = {}
+        res = self.http_client.request(self.rss_url)
+        feeds = feedparser.parse(res.text)
+        self.entries = feeds.entries
+
+        entries = feeds.entries
+        for entry in entries:
+            match = re.search(self.pattern, entry.link)
+            if match:
+                torrent_id = match.group(1)
+            else:
+                continue
+
+            dt = parse(entry.published)
+            utcnow = datetime.now(timezone.utc)
+            delta = utcnow - dt
+            if delta.seconds < self.interval * 100:
+                self.rss_ids[torrent_id] = dt
+
+        # pprint(self.rss_ids)
+        return self.rss_ids
+
+    def delete_old_torrents(self):
+        # Calculate the time 1 day ago
+        current_time = datetime.now()
+        one_day_ago = current_time - timedelta(days=1)
+
+        # Walk through the folder
+        for root, dirs, files in os.walk(self.torrent_path):
+            for file_name in files:
+                if not file_name.endswith('.torrent'):
+                    continue
+                file_path = os.path.join(root, file_name)
+                file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+
+                # Compare the file's modification time with one day ago
+                if file_time < one_day_ago:
+                    os.remove(file_path)
+                    with open(self.log_path, 'a+') as f:
+                        f.write(f"Deleted {os.path.basename(file_path)}." + '\n')
+
+    def get_all(self):
         """get all torrents of the page"""
-        soup = bs4.BeautifulSoup(html, 'lxml')
+        res = self.http_client.request(self.site_url)
+        # print(res.text)
+        soup = bs4.BeautifulSoup(res.text, 'lxml')
         self.torrents = soup.select('.torrents>tr')
         print(f'Found {len(self.torrents)} torrents')
         return self.torrents
@@ -131,7 +184,7 @@ class NexusPage():
             if entry.find(class_=self.free_tag):
                 rate = 1
             elif entry.find(class_=self.free_tag2):
-                rate = 1
+                rate = 2
             else:
                 continue
 
@@ -151,14 +204,17 @@ class NexusPage():
                 continue
 
             torrent_id = re.search(self.pattern, detail_url).group(1)
+            if torrent_id not in self.rss_ids:
+                continue
+
             size = self.get_size(str(entry))
             if size and download_url and detail_url:
                 self.free_torrents.append((torrent_id, title, size, rate, detail_url, download_url))
             # print(entry)
             # print(torrent_id, title, size, detail_url)
 
-        print(f'Found {len(self.free_torrents)}/{len(self.torrents)} free torrents')
-        #pprint(self.free_torrents)
+        print(f'Found {len(self.free_torrents)}/{len(self.torrents)} new free torrents')
+        # pprint(self.free_torrents)
         return self.free_torrents
 
     def get_size(self, text):
@@ -174,17 +230,14 @@ class NexusPage():
         return f'{self.domain}/download.php?id={torrent_id}&letdown=1'
 
     def download_free(self):
-        log_path = os.path.join(self.torrent_path, "torrents.log")
-        if not os.path.isfile(log_path):
-            with open(log_path, 'w') as f:
+        if not os.path.isfile(self.log_path):
+            with open(self.log_path, 'w') as f:
                 f.write("A list shows the torrents have been downloaded:\n")
 
         count = 0
         new = 0
         msg_body = ''
         for torrent_id, title, size, rate, detail_url, download_url in self.free_torrents:
-            if count >= self.torrents_amount:
-                break
             if not self.min_size < size < self.max_size:
                 continue
 
@@ -201,16 +254,16 @@ class NexusPage():
                 # print(f'Save {torrent_path}')
                 new += 1
                 msg_body += f'[{torrent_id}]{title} {size}GB {rate}X\n'
-                with open(log_path, 'a+') as f:
+                with open(self.log_path, 'a+') as f:
                     f.write(torrent_name + '\n')
             else:
                 print(f'Skip {torrent_name}')
 
             count += 1
 
-        with open(log_path, 'a+') as f:
-            f.write("-------------------------------\n")
         if new > 0:
+            with open(self.log_path, 'a+') as f:
+                f.write("-------------------------------\n")
             msg_title = f'{new} new torrent for {self.site_name}'
             notify_url = f'https://iyuu.cn/IYUU27977T0794db8e218f9becae662453091e9c90fc6edb78.send?text={msg_title}&desp={msg_body}'
             requests.get(notify_url)
@@ -263,9 +316,9 @@ if __name__ == '__main__':
 
     if not config_dict['is_gazelle']:
         page = NexusPage(config_dict)
-        # task_list = task.find_free()
-        free_torrents = page.get_free()
-        page.download_free()
+        page.run()
+
+
 
     else:
         # The site would inform you that you have loged in this site when you run Page() at the very beginning.
@@ -273,4 +326,4 @@ if __name__ == '__main__':
         # So just run this command again to make sure that you can get the informations of torrents page.
         page = GazellePage()
         # free_torrents = page.find_free(DIC_free_tag)
-        # download_free(torrents_amount, free_torrents, torrent_path)
+        # download_free( free_torrents, torrent_path)
