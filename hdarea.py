@@ -11,29 +11,29 @@ import feedparser
 from dateutil.parser import parse
 
 config_dict = {
-    'site_name': 'wintersakura',
-    'domain': 'https://wintersakura.net',
-    'site_url': "https://wintersakura.net/torrents.php?sort=4&type=desc",
-    'rss_url': "https://wintersakura.net/torrentrss.php?passkey=693fcaab7778be73dbd0b593711fb191&rows=10&isize=1&linktype=dl",
+    'site_name': 'hdarea',
+    'domain': 'https://hdarea.club',
+    'site_url': "https://hdarea.club/torrents.php?sort=4&type=desc",
+    'rss_url': "https://hdarea.club/torrentrss.php?rows=10&isize=1&linktype=dl&passkey=70a7f5b7a2690e25ace71e4d14d46b0a",
     # c_lang;
-    'site_cookie': "c_lang; c_secure_uid=MTYzOTg%3D; c_secure_pass=e4e57957b26463802cdb5d4a5e949b1b; c_secure_ssl=eWVhaA%3D%3D; c_secure_tracker_ssl=eWVhaA%3D%3D; c_secure_login=bm9wZQ%3D%3D",
+    'site_cookie': "c_lang; c_secure_uid=MTIzNDk0; c_secure_pass=7aa59fec74c5dfc1bd21e09f154269e2; c_secure_ssl=eWVhaA%3D%3D; c_secure_tracker_ssl=eWVhaA%3D%3D; c_secure_login=bm9wZQ%3D%3D",
     'is_gazelle': False,
     'is_encrypted': False,
     'min_size': 5,
     'max_size': sys.maxsize,
-    'torrent_path': os.path.join(os.path.dirname(__file__), 'torrents', 'wintersakura'),
+    'torrent_path': os.path.join(os.path.dirname(__file__), 'torrents', 'hdarea'),
     'http_headers': {
         "User-Agent": 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36',
-        'Upgrade-Insecure-Requests': '1',
-        'Dnt': '1',
-        'Accept': "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept_Language": 'en-AU,en;q=0.9',
-        "Accept_Encoding": 'gzip, deflate, br',
-        "Cache_Control": 'max-age=0',
-        "Content_Length": '',
-        "Content_Type": 'text/html; charset=utf-8; Cache-control:private',
-        "Origin": '',
-        "Referer": 'https://wintersakura.net/torrents.php',
+        # 'Upgrade-Insecure-Requests': '1',
+        # 'Dnt': '1',
+        # 'Accept': "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        # "Accept_Language": 'en-AU,en;q=0.9',
+        # "Accept_Encoding": 'gzip, deflate, br',
+        # "Cache_Control": 'max-age=0',
+        # "Content_Length": '',
+        # "Content_Type": 'text/html; charset=utf-8; Cache-control:private',
+        # "Origin": '',
+        # "Referer": 'https://hdarea.club/torrents.php',
     }
 }
 
@@ -118,6 +118,7 @@ class NexusPage():
 
     def run(self):
         self.rss_ids = self.get_rss()
+        print(len(self.rss_ids))
 
         self.get_all()
         page.get_free()
@@ -151,7 +152,6 @@ class NexusPage():
         # Calculate the time 1 day ago
         current_time = datetime.now()
         threshold = current_time - timedelta(seconds=self.interval * 10)
-
         # Walk through the folder
         for root, dirs, files in os.walk(self.torrent_path):
             for file_name in files:
@@ -159,7 +159,6 @@ class NexusPage():
                     continue
                 file_path = os.path.join(root, file_name)
                 file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-
                 # Compare the file's modification time with one day ago
                 if file_time < threshold:
                     os.remove(file_path)
@@ -320,6 +319,9 @@ if __name__ == '__main__':
     if not config_dict['is_gazelle']:
         page = NexusPage(config_dict)
         page.run()
+
+
+
     else:
         # The site would inform you that you have loged in this site when you run Page() at the very beginning.
         # task = GazellePage()
