@@ -151,7 +151,8 @@ class NexusPage():
     def delete_old_torrents(self):
         # Calculate the time 1 day ago
         current_time = datetime.now()
-        threshold = current_time - timedelta(seconds=self.interval * 10)
+        threshold = current_time - timedelta(hours=12)
+
         # Walk through the folder
         for root, dirs, files in os.walk(self.torrent_path):
             for file_name in files:
