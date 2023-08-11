@@ -117,11 +117,11 @@ class NexusPage():
 
     def run(self):
         self.rss_ids = self.get_rss()
-        print(len(self.rss_ids))
 
         self.get_all()
         page.get_free()
         page.download_free()
+        self.delete_old_torrents()
 
     def get_rss(self):
         self.rss_ids = {}
@@ -149,7 +149,7 @@ class NexusPage():
     def delete_old_torrents(self):
         # Calculate the time 1 day ago
         current_time = datetime.now()
-        one_day_ago = current_time - timedelta(days=1)
+        threshold = current_time - timedelta(seconds=self.interval * 10)
 
         # Walk through the folder
         for root, dirs, files in os.walk(self.torrent_path):
@@ -160,7 +160,7 @@ class NexusPage():
                 file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
 
                 # Compare the file's modification time with one day ago
-                if file_time < one_day_ago:
+                if file_time < threshold:
                     os.remove(file_path)
                     with open(self.log_path, 'a+') as f:
                         f.write(f"Deleted {os.path.basename(file_path)}." + '\n')
